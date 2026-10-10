@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using SupportDesk.Application;
+using SupportDesk.Application.Options;
 using SupportDesk.Infrastructure;
 using SupportDesk.Presentation.Extensions;
 using SupportDesk.Presentation.Filters;
@@ -29,6 +30,12 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+
+var slaOptions = new SlaOptions();
+builder.Configuration.GetSection(SlaOptions.SectionName).Bind(slaOptions);
+builder.Services.AddSingleton(slaOptions);
+builder.Services.AddSingleton(SlaWindowRulesFactory.FromOptions(slaOptions));
 
 var app = builder.Build();
 

@@ -11,8 +11,7 @@ using SupportDesk.Infrastructure.Services;
 namespace SupportDesk.Infrastructure;
 
 /// <summary>
-/// Wires the domain's repositories and the application's abstractions to their SQL Server /
-/// system implementations.
+/// Wires repositories, queries, services and the database context.
 /// </summary>
 public static class DependencyInjection
 {
@@ -40,6 +39,10 @@ public static class DependencyInjection
         services.AddScoped<ICustomerQueries, CustomerQueries>();
         services.AddScoped<IAgentQueries, AgentQueries>();
         services.AddScoped<ICategoryQueries, CategoryQueries>();
+
+        // New for Task 2.
+        services.AddScoped<IAgentSelectionQuery, AgentSelectionQuery>();
+        services.AddScoped<AgentSelector>();
 
         services.AddScoped<SupportDbSeeder>();
 
