@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect,useRef, useState } from 'react';
 import { ApiError } from '../../../api/client';
 import { ticketsApi } from '../../../api/tickets';
 import type { PagedResult, TicketFilters, TicketListItem } from '../../../types/api';
@@ -30,6 +30,9 @@ export function useTicketList() {
   const [filters, setFilters] = useState<TicketFilters>(emptyFilters);
   const [state, setState] = useState<State>({ isLoading: true });
 
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters; 
+
   const load = async () => {
     setState((current) => ({ ...current, isLoading: true, error: undefined }));
 
@@ -41,14 +44,28 @@ export function useTicketList() {
       setState((current) => ({ ...current, isLoading: false, error: message }));
     }
   };
-
   useEffect(() => {
-    const handle = window.setTimeout(load, DEBOUNCE_MS);
-
+    const handle = window.setTimeout(() => void load(), DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- filters object identity changes every render
-  }, [filters.search, filters.page, filters.pageSize]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.search]);
 
+  const { search: _search, ...immediateFilters } = filters;
+  const immediateKey = JSON.stringify(immediateFilters);
+  
+
+ 
+
+  const isFirstRun = useRef(true);
+  useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      return; // Effect 1 already handles the initial mount fetch.
+    }
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [immediateKey]);
+  
   const updateFilters = (patch: Partial<TicketFilters>) =>
     setFilters((current) => ({ ...current, ...patch, page: patch.page ?? 1 }));
 

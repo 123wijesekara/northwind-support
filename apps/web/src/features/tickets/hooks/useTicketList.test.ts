@@ -51,4 +51,29 @@ describe('useTicketList', () => {
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data?.items).toHaveLength(1);
   });
+
+  it('fires an immediate request when a dropdown filter changes (DEFECT-117)', async () => {
+    const { result } = renderHook(() => useTicketList());
+
+    // Let the initial debounced load settle.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(getTickets).toHaveBeenCalledTimes(1);
+
+    // Change the status filter. On the original code this would not fire
+    // a request at all until another watched dependency changed.
+    await act(async () => {
+      result.current.updateFilters({ status: 'InProgress' });
+    });
+
+    // No timer advance: the request must have fired immediately.
+    expect(getTickets).toHaveBeenCalledTimes(2);
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'InProgress', page: 1 }),
+    );
+  });
+
 });
+
+
