@@ -23,7 +23,7 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQu
     /// </remarks>
     public async Task<PagedResult<TicketListItemDto>> GetPagedAsync(TicketQuery query, CancellationToken ct)
     {
-        var tickets = TicketsWithLabels();
+        var tickets = ApplyFilters(TicketsWithLabels(),query);
 
         var totalCount = await tickets.CountAsync(ct);
 
@@ -117,6 +117,58 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQu
         from agent in db.Set<Agent>().Where(a => a.Id == ticket.AssignedAgentId).DefaultIfEmpty()
         select new TicketWithLabels { Ticket = ticket, Customer = customer, Category = category, Agent = agent };
 
+
+
+private static IQueryable<TicketWithLabels> ApplyFilters(
+        IQueryable<TicketWithLabels> source,
+        TicketQuery query)
+    {
+        // FL-1: exact matches.
+        if (query.Status is { } status)
+        {
+            source = source.Where(x => x.Ticket.Status == status);
+        }
+
+        if (query.Priority is { } priority)
+        {
+            source = source.Where(x => x.Ticket.Priority == priority);
+        }
+
+        if (query.CategoryId is { } categoryId)
+        {
+            source = source.Where(x => x.Ticket.CategoryId == categoryId);
+        }
+
+        if (query.CustomerId is { } customerId)
+        {
+            source = source.Where(x => x.Ticket.CustomerId == customerId);
+        }
+
+        if (query.AssignedAgentId is { } agentId)
+        {
+            source = source.Where(x => x.Ticket.AssignedAgentId == agentId);
+        }
+
+        // FL-2: unassigned only.
+        if (query.UnassignedOnly)
+        {
+            source = source.Where(x => x.Ticket.AssignedAgentId == null);
+        }
+
+        // FL-3: search on title, reference or customer name. Blank is ignored.
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim();
+            var pattern = $"%{term}%";
+
+            source = source.Where(x =>
+                EF.Functions.Like(x.Ticket.Title, pattern) ||
+                EF.Functions.Like(x.Ticket.Reference, pattern) ||
+                EF.Functions.Like(x.Customer.Name, pattern));
+        }
+
+        return source;
+    }
     private static IQueryable<TicketWithLabels> ApplySort(IQueryable<TicketWithLabels> source, TicketQuery query)
     {
         var descending = !string.Equals(query.SortDirection, "asc", StringComparison.OrdinalIgnoreCase);
