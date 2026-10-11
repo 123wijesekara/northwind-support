@@ -198,19 +198,19 @@ public sealed class TicketQueries(
                      x.Ticket.DueAtUtc != null &&
                      now > x.Ticket.DueAtUtc)),
 
-                               SlaStatus.AtRisk => source.Where(x =>
+                              SlaStatus.AtRisk => source.Where(x =>
                     x.Ticket.ResolvedAtUtc == null &&
                     x.Ticket.DueAtUtc != null &&
                     now <= x.Ticket.DueAtUtc &&
-                    EF.Functions.DateDiffMillisecond(now, x.Ticket.DueAtUtc.Value) * 100
-                        <= EF.Functions.DateDiffMillisecond(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc.Value) * threshold),
+                    EF.Functions.DateDiffSecond(now, x.Ticket.DueAtUtc.Value) * 100
+                        <= EF.Functions.DateDiffSecond(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc.Value) * threshold),
 
                 SlaStatus.WithinSla => source.Where(x =>
                     x.Ticket.ResolvedAtUtc == null &&
                     x.Ticket.DueAtUtc != null &&
                     now <= x.Ticket.DueAtUtc &&
-                    EF.Functions.DateDiffMillisecond(now, x.Ticket.DueAtUtc.Value) * 100
-                        > EF.Functions.DateDiffMillisecond(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc.Value) * threshold),
+                    EF.Functions.DateDiffSecond(now, x.Ticket.DueAtUtc.Value) * 100
+                        > EF.Functions.DateDiffSecond(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc.Value) * threshold),
 
                 _ => source
             };

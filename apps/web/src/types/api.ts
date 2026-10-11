@@ -48,6 +48,16 @@ export interface AgentSummary {
   fullName: string;
 }
 
+/** The decisions the create-time triage made, with a reason for each. */
+export interface TriageResult {
+  priority: TicketPriority;
+  priorityReason: string;
+  dueAtUtc: string | null;
+  slaWindowReason: string;
+  assignedAgent: AgentSummary | null;
+  assignmentReason: string;
+}
+
 export interface TicketListItem {
   id: number;
   reference: string;
@@ -79,6 +89,23 @@ export interface TicketDetail {
   dueAtUtc: string | null;
   resolvedAtUtc: string | null;
   slaStatus: SlaStatus;
+  /** Only populated by the create response; null on later reads. */
+  triage?: TriageResult | null;
+}
+
+/** One row of escalation history, newest first. */
+export interface TicketEscalation {
+  id: number;
+  ticketId: number;
+  fromPriority: TicketPriority;
+  toPriority: TicketPriority;
+  fromAgent: AgentSummary | null;
+  toAgent: AgentSummary | null;
+  fromDueAtUtc: string | null;
+  toDueAtUtc: string | null;
+  reason: string;
+  escalatedBy: string;
+  escalatedAtUtc: string;
 }
 
 /** Everything the ticket list screen can narrow the results by. */
@@ -90,6 +117,7 @@ export interface TicketFilters {
   customerId?: number;
   assignedAgentId?: number;
   unassignedOnly?: boolean;
+  slaStatus?: SlaStatus;
   page: number;
   pageSize: number;
   sortBy: TicketSortField;
@@ -102,6 +130,11 @@ export interface CreateTicketPayload {
   customerId: number;
   categoryId: number;
   requestedPriority?: TicketPriority;
+}
+
+export interface EscalateTicketPayload {
+  reason: string;
+  escalatedBy: string;
 }
 
 export interface Agent {

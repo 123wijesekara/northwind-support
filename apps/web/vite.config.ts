@@ -24,6 +24,14 @@ export default defineConfig(({ mode }) => {
       globals: true,
       setupFiles: './src/test/setup.ts',
       css: false,
+      // Windows: Vitest 4 rewrote its pools. `poolOptions` is gone, so the
+      // equivalent settings live at the top level now.
+      pool: 'threads',
+      maxWorkers: 1,
+      // Keep isolation on: shared JSDOM between files leaks renders into later tests.
+      isolate: true,
+      testTimeout: 20_000,
+      hookTimeout: 30_000,
     },
   };
 });

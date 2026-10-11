@@ -1,7 +1,7 @@
 import { formatDateTime, formatRelativeToNow } from '../../../lib/format';
 import type { TicketDetail } from '../../../types/api';
-import { SlaCell } from './SlaCell';
 import { PriorityBadge, StatusBadge } from './TicketBadges';
+import { SlaIndicator } from './SlaIndicator';
 
 interface TicketSummaryProps {
   ticket: TicketDetail;
@@ -34,7 +34,11 @@ export function TicketSummary({ ticket }: TicketSummaryProps) {
         <div>
           <dt>SLA</dt>
           <dd>
-            <SlaCell dueAtUtc={ticket.dueAtUtc} slaStatus={ticket.slaStatus} />
+            <SlaIndicator
+              slaStatus={ticket.slaStatus}
+              dueAtUtc={ticket.dueAtUtc}
+              variant="full"
+            />
             {ticket.dueAtUtc && (
               <span className="summary__note">Due {formatRelativeToNow(ticket.dueAtUtc)}</span>
             )}

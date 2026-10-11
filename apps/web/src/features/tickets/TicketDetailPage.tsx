@@ -1,8 +1,13 @@
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { ticketsApi } from '../../api/tickets';
 import { ErrorMessage } from '../../components/ErrorMessage';
 import { Spinner } from '../../components/Spinner';
 import { useReferenceData } from '../../hooks/useReferenceData';
+import type { TicketEscalation } from '../../types/api';
 import { AssignAgentControl } from './components/AssignAgentControl';
+import { EscalationHistory } from './components/EscalationHistory';
+import { EscalationPanel } from './components/EscalationPanel';
 import { StatusActions } from './components/StatusActions';
 import { TicketSummary } from './components/TicketSummary';
 import { useTicket } from './hooks/useTicket';
@@ -13,6 +18,45 @@ export function TicketDetailPage() {
 
   const { data: ticket, isLoading, error, reload, setData } = useTicket(ticketId);
   const reference = useReferenceData();
+
+  const [escalations, setEscalations] = useState<TicketEscalation[]>([]);
+  const [escalationsError, setEscalationsError] = useState<string | null>(null);
+  const [escalationsLoading, setEscalationsLoading] = useState(true);
+
+  // Load escalation history whenever the ticket changes.
+  useEffect(() => {
+    if (Number.isNaN(ticketId)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const load = async () => {
+      setEscalationsLoading(true);
+      setEscalationsError(null);
+
+      try {
+        const data = await ticketsApi.getEscalations(ticketId);
+        if (!cancelled) {
+          setEscalations(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setEscalationsError('Unable to load escalation history.');
+        }
+      } finally {
+        if (!cancelled) {
+          setEscalationsLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketId, ticket?.updatedAtUtc]);
 
   if (Number.isNaN(ticketId)) {
     return <ErrorMessage message="That is not a valid ticket reference." />;
@@ -29,6 +73,11 @@ export function TicketDetailPage() {
   if (!ticket) {
     return null;
   }
+
+  const handleEscalated = (updated: typeof ticket) => {
+    setData(updated);
+    // History reload is triggered by the useEffect above, watching updatedAtUtc.
+  };
 
   return (
     <section>
@@ -60,6 +109,14 @@ export function TicketDetailPage() {
             ticket={ticket}
             agents={reference.data?.agents ?? []}
             onUpdated={setData}
+          />
+
+          <EscalationPanel ticket={ticket} onEscalated={handleEscalated} />
+
+          <EscalationHistory
+            escalations={escalations}
+            isLoading={escalationsLoading}
+            error={escalationsError}
           />
         </aside>
       </div>
