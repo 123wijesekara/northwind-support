@@ -39,6 +39,12 @@ public sealed class Agent : AggregateRoot
 
     public DateTime CreatedAtUtc { get; private set; }
 
+    /// <summary>
+    /// The hashed password. Null until credentials are set (for example, for a data-only agent).
+    /// Never store a plaintext password here.
+    /// </summary>
+    public string? PasswordHash { get; private set; }
+
     /// <summary>The ticket categories this agent is qualified for.</summary>
     public IReadOnlyCollection<AgentSpecialization> Specializations => _specializations;
 
@@ -55,4 +61,14 @@ public sealed class Agent : AggregateRoot
 
     /// <summary>Stops the agent from taking new work. Their history is kept.</summary>
     public void Deactivate() => IsActive = false;
+
+    /// <summary>
+    /// Stores the hashed password. Callers must hash before calling; this method
+    /// does not accept plaintext, to make that impossible to get wrong.
+    /// </summary>
+    public void SetPasswordHash(string passwordHash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(passwordHash);
+        PasswordHash = passwordHash;
+    }
 }

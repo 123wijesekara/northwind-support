@@ -10,9 +10,6 @@ using SupportDesk.Infrastructure.Services;
 
 namespace SupportDesk.Infrastructure;
 
-/// <summary>
-/// Wires repositories, queries, services and the database context.
-/// </summary>
 public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(
@@ -41,9 +38,9 @@ public static class DependencyInjection
         services.AddScoped<IAgentQueries, AgentQueries>();
         services.AddScoped<ICategoryQueries, CategoryQueries>();
 
-        // New for Task 2.
         services.AddScoped<IAgentSelectionQuery, AgentSelectionQuery>();
-     
+
+        services.AddScoped<IAuthService, AuthService>();
 
         services.AddScoped<SupportDbSeeder>();
 

@@ -3,11 +3,19 @@
   <!--
     Implements the domain's repositories and the application's abstractions with EF Core and
     SQL Server: the DbContext, mappings, migrations and seed data (Data/), repositories, read
-    queries and the system clock.
+    queries, the system clock, and authentication.
   -->
   <ItemGroup>
     <ProjectReference Include="../SupportDesk.Application/SupportDesk.Application.csproj" />
     <ProjectReference Include="../SupportDesk.Domain/SupportDesk.Domain.csproj" />
+  </ItemGroup>
+
+  <!--
+    Brings in ASP.NET Core types: PasswordHasher<T> (Microsoft.Extensions.Identity.Core) and
+    the JWT creation types (System.IdentityModel.Tokens.Jwt), without dragging in the web stack.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>

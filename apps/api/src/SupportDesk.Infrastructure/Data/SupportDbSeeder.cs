@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SupportDesk.Application.Abstractions;
@@ -19,6 +20,14 @@ namespace SupportDesk.Infrastructure.Data;
 /// </remarks>
 public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger)
 {
+    /// <summary>
+    /// Local dev password. Clearly a fixture: it is documented in the README and never used
+    /// outside development.
+    /// </summary>
+    private const string DevPassword = "Passw0rd!Dev";
+
+    private readonly PasswordHasher<Agent> _hasher = new();
+
     /// <summary>Seeds the database, unless it already has tickets in it.</summary>
     public async Task SeedAsync(CancellationToken ct = default)
     {
@@ -69,20 +78,28 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
         new("Wide World Importers", "support@wideworld.example", "+65 6555 0106", CustomerTier.Premium, now.AddDays(-90))
     ];
 
-    private static List<Agent> SeedAgents(DateTime now)
+    private List<Agent> SeedAgents(DateTime now)
     {
         var yuki = new Agent("Yuki Tanaka", "yuki.tanaka@northwind-support.example", 8, now.AddDays(-600));
         yuki.Deactivate();
 
-        return
-        [
+        var agents = new List<Agent>
+        {
             new("Alex Turner", "alex.turner@northwind-support.example", 10, now.AddDays(-500)),
             new("Ben Osei", "ben.osei@northwind-support.example", 8, now.AddDays(-460)),
             new("Priya Nair", "priya.nair@northwind-support.example", 8, now.AddDays(-400)),
             new("Sara Lindqvist", "sara.lindqvist@northwind-support.example", 6, now.AddDays(-280)),
             new("Marcus Doyle", "marcus.doyle@northwind-support.example", 6, now.AddDays(-200)),
             yuki
-        ];
+        };
+
+        // Every seeded agent, active or not, gets the same clearly-local password, hashed here.
+        foreach (var agent in agents)
+        {
+            agent.SetPasswordHash(_hasher.HashPassword(agent, DevPassword));
+        }
+
+        return agents;
     }
 
     /// <summary>

@@ -19,6 +19,10 @@ public sealed class AgentConfiguration : IEntityTypeConfiguration<Agent>
 
         builder.Property(a => a.CreatedAtUtc).HasColumnType("datetime2(3)");
 
+        // The hashed password. Nullable: an agent may exist before credentials are set.
+        // Never store a plaintext password here.
+        builder.Property(a => a.PasswordHash).HasMaxLength(500);
+
         builder.HasIndex(a => a.Email).IsUnique().HasDatabaseName("UQ_Agents_Email");
 
         builder.HasMany(a => a.Specializations)
