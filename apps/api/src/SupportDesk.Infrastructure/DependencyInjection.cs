@@ -42,7 +42,7 @@ public static class DependencyInjection
 
         // New for Task 2.
         services.AddScoped<IAgentSelectionQuery, AgentSelectionQuery>();
-        services.AddScoped<AgentSelector>();
+     
 
         services.AddScoped<SupportDbSeeder>();
 

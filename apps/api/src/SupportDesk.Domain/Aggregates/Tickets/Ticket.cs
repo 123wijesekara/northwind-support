@@ -78,7 +78,22 @@ public sealed class Ticket : AggregateRoot
             UpdatedAtUtc = nowUtc
         };
     }
-
+    /// <summary>
+    /// Applies the triage decisions to a freshly raised ticket: the effective priority,
+    /// the due date, and the owner (or null for unassigned).
+    /// </summary>
+    public void ApplyTriage(
+        TicketPriority priority,
+        int? assignedAgentId,
+        DateTime? dueAtUtc,
+        DateTime nowUtc)
+    {
+        Priority = priority;
+        AssignedAgentId = assignedAgentId;
+        DueAtUtc = dueAtUtc;
+        UpdatedAtUtc = nowUtc;
+    }
+    
     /// <summary>
     /// Moves the ticket through its lifecycle, keeping the resolution timestamp in step.
     /// </summary>

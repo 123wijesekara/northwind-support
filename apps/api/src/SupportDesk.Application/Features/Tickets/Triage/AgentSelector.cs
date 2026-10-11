@@ -1,17 +1,14 @@
 using SupportDesk.Application.Contracts.Tickets;
 
-namespace SupportDesk.Infrastructure.Services;
+namespace SupportDesk.Application.Features.Tickets.Triage;
 
 /// <summary>
 /// Picks the best agent for a new ticket, following BR-4 (specialists) and BR-5
 /// (fewest open, deterministic tie-break, strictly below the limit).
+/// Pure: it only sees the candidate data it is given, so it is trivially testable.
 /// </summary>
 public sealed class AgentSelector
 {
-    /// <summary>
-    /// Chooses an agent from the candidates. Returns null with a reason when no agent
-    /// is eligible - that is a normal outcome, not an error.
-    /// </summary>
     public AgentSelectionOutcome Select(
         IReadOnlyList<AgentSelectionCandidate> candidates,
         int categoryId,

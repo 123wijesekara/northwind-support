@@ -35,4 +35,7 @@ public sealed class TicketDetailDto
 
     /// <summary>Derived from the dates above; never stored.</summary>
     public SlaStatus SlaStatus { get; set; }
+
+     /// <summary>Only populated by POST /api/tickets. Null everywhere else.</summary>
+    public TriageResult? Triage { get; set; }
 }

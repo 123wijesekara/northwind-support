@@ -1,7 +1,7 @@
 using SupportDesk.Application.Contracts.Tickets;
-using SupportDesk.Infrastructure.Services;
+using SupportDesk.Application.Features.Tickets.Triage;
 
-namespace SupportDesk.UnitTests.Infrastructure.Services;
+namespace SupportDesk.UnitTests.Application.Features.Tickets.Triage;
 
 public class AgentSelectorTests
 {

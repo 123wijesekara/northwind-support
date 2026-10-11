@@ -1,11 +1,14 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using SupportDesk.Application.Abstractions;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
 using SupportDesk.Application.Features.Tickets.Commands.ChangeTicketStatus;
 using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
+using SupportDesk.Application.Features.Tickets.Triage;
 using SupportDesk.Domain.Aggregates.Agents;
+using SupportDesk.Domain.Aggregates.Categories;
 using SupportDesk.Domain.Aggregates.Customers;
 using SupportDesk.Domain.Aggregates.Tickets;
 using SupportDesk.Domain.Repositories;
@@ -13,19 +16,24 @@ using SupportDesk.UnitTests.TestDoubles;
 
 namespace SupportDesk.UnitTests.Application.Features.Tickets.Commands;
 
-/// <summary>
-/// Shared arrangement for the ticket command tests: mocked repositories and queries, a fixed
-/// clock, and command handlers wired to all of them.
-/// </summary>
 internal sealed class TicketCommandTestContext
 {
     public TicketCommandTestContext()
     {
-        Customers.Setup(c => c.ExistsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        // Default: the customer exists.
+        Customers.Setup(c => c.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Customer(
+                "Contoso Ltd",
+                "support@contoso.example",
+                null,
+                CustomerTier.Standard,
+                Clock.UtcNow));
 
         Categories.Setup(c => c.ExistsAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+
+        Categories.Setup(c => c.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Category("General", requiresSpecialist: false, forcesCriticalPriority: false));
 
         Tickets.Setup(t => t.NextReferenceAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync("TCK-0041");
@@ -34,7 +42,6 @@ internal sealed class TicketCommandTestContext
             .Callback<Ticket, CancellationToken>((ticket, _) => AddedTicket = ticket)
             .Returns(Task.CompletedTask);
 
-        // Every command returns the ticket as re-read once its change has been saved.
         TicketQueries.Setup(q => q.GetDetailAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TicketDetailDto
             {
@@ -44,16 +51,39 @@ internal sealed class TicketCommandTestContext
                 Category = new CategoryDto(1, "General", false)
             });
 
+        // Triage service with a real selector and no eligible agents by default.
+        var selectionQuery = new Mock<IAgentSelectionQuery>();
+        selectionQuery
+            .Setup(q => q.GetCandidatesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<AgentSelectionCandidate>());
+
+        TriageService = new TicketTriageService(
+            selectionQuery.Object,
+            new AgentSelector(),
+            SlaWindowRules.Default,
+            Clock);
+
         var getTicket = new GetTicketQueryHandler(TicketQueries.Object);
 
         RaiseTicket = new RaiseTicketCommandHandler(
-            Tickets.Object, Customers.Object, Categories.Object, UnitOfWork.Object, Clock, getTicket,
+            Tickets.Object,
+            Customers.Object,
+            Categories.Object,
+            UnitOfWork.Object,
+            Clock,
+            getTicket,
+            TriageService,
             NullLogger<RaiseTicketCommandHandler>.Instance);
 
-        ChangeTicketStatus = new ChangeTicketStatusCommandHandler(Tickets.Object, UnitOfWork.Object, Clock, getTicket);
+        ChangeTicketStatus = new ChangeTicketStatusCommandHandler(
+            Tickets.Object, UnitOfWork.Object, Clock, getTicket);
 
         AssignTicket = new AssignTicketCommandHandler(
-            Tickets.Object, Agents.Object, UnitOfWork.Object, Clock, getTicket,
+            Tickets.Object,
+            Agents.Object,
+            UnitOfWork.Object,
+            Clock,
+            getTicket,
             NullLogger<AssignTicketCommandHandler>.Instance);
     }
 
@@ -71,16 +101,16 @@ internal sealed class TicketCommandTestContext
 
     public FixedClock Clock { get; } = new();
 
+    public TicketTriageService TriageService { get; }
+
     public RaiseTicketCommandHandler RaiseTicket { get; }
 
     public ChangeTicketStatusCommandHandler ChangeTicketStatus { get; }
 
     public AssignTicketCommandHandler AssignTicket { get; }
 
-    /// <summary>The ticket handed to the repository by the last create call.</summary>
     public Ticket? AddedTicket { get; private set; }
 
-    /// <summary>Makes <see cref="ITicketRepository.GetByIdAsync"/> return this ticket.</summary>
     public Ticket ExistingTicket(Ticket ticket)
     {
         Tickets.Setup(t => t.GetByIdAsync(ticket.Id, It.IsAny<CancellationToken>()))
