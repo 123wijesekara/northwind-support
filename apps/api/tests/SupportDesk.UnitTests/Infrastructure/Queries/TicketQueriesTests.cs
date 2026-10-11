@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SupportDesk.Application.Contracts.Common;
 using SupportDesk.Application.Contracts.Tickets;
@@ -12,29 +11,40 @@ using SupportDesk.UnitTests.TestDoubles;
 
 namespace SupportDesk.UnitTests.Infrastructure.Queries;
 
-public sealed class TicketQueriesTests : IDisposable
+/// <summary>
+/// Query-level tests. These run against SQL Server because the SLA filter relies on
+/// date arithmetic that SQLite cannot translate. The test creates and drops its own
+/// database so it does not affect the development one.
+/// </summary>
+public sealed class TicketQueriesTests : IAsyncLifetime
 {
-    private readonly SqliteConnection _connection;
-    private readonly SupportDbContext _db;
+    private readonly string _dbName = $"SupportDeskTests_{Guid.NewGuid():N}";
+    private SupportDbContext _db = null!;
 
-    public TicketQueriesTests()
+    private static string BuildConnectionString(string dbName) =>
+        $"Server=localhost;Database={dbName};Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True";
+
+    public async Task InitializeAsync()
     {
-        // In-memory SQLite keeps the schema alive for the lifetime of the connection.
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
-
         var options = new DbContextOptionsBuilder<SupportDbContext>()
-            .UseSqlite(_connection)
+            .UseSqlServer(BuildConnectionString(_dbName))
             .Options;
 
         _db = new SupportDbContext(options);
-        _db.Database.EnsureCreated();
+        await _db.Database.EnsureCreatedAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
-        _db.Dispose();
-        _connection.Dispose();
+        try
+        {
+            await _db.Database.EnsureDeletedAsync();
+        }
+        catch
+        {
+            // Best effort.
+        }
+        await _db.DisposeAsync();
     }
 
     [Fact]
@@ -131,22 +141,84 @@ public sealed class TicketQueriesTests : IDisposable
         Assert.Equal(2, result.TotalCount);
     }
 
+    [Fact]
+    public async Task GetPagedAsync_SlaStatusNotApplicable_ReturnsOnlyTicketsWithoutDueDate()
+    {
+        Seed(
+            new TicketSeed("TCK-0001", TicketPriority.Medium, TicketStatus.Open, null, "Contoso Ltd",
+                "Something is not working", FixedClock.DefaultNow, FixedClock.DefaultNow.AddHours(4)),
+            new TicketSeed("TCK-0002", TicketPriority.Medium, TicketStatus.Open, null, "Contoso Ltd",
+                "Something is not working", FixedClock.DefaultNow, null));
+
+        var result = await Query(new TicketQuery { SlaStatus = SlaStatus.NotApplicable });
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0002", result.Items.Single().Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SlaStatusBreached_ReturnsOpenPastDueTickets()
+    {
+        Seed(
+            new TicketSeed("TCK-0001", TicketPriority.Medium, TicketStatus.Open, null, "Contoso Ltd",
+                "Something is not working", FixedClock.DefaultNow.AddHours(-5), FixedClock.DefaultNow.AddHours(-1)),
+            new TicketSeed("TCK-0002", TicketPriority.Medium, TicketStatus.Open, null, "Contoso Ltd",
+                "Something is not working", FixedClock.DefaultNow, FixedClock.DefaultNow.AddHours(10)));
+
+        var result = await Query(new TicketQuery { SlaStatus = SlaStatus.Breached });
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0001", result.Items.Single().Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SlaStatusAtRisk_ReturnsOpenNearDueTickets()
+    {
+        Seed(
+            // Created 3h ago, due in 1h → 25% remaining → AtRisk.
+            new TicketSeed("TCK-0001", TicketPriority.Medium, TicketStatus.Open, null, "Contoso Ltd",
+                "Something is not working", FixedClock.DefaultNow.AddHours(-3), FixedClock.DefaultNow.AddHours(1)),
+            // Created 1h ago, due in 3h → 75% remaining → WithinSla.
+            new TicketSeed("TCK-0002", TicketPriority.Medium, TicketStatus.Open, null, "Contoso Ltd",
+                "Something is not working", FixedClock.DefaultNow.AddHours(-1), FixedClock.DefaultNow.AddHours(3)));
+
+        var result = await Query(new TicketQuery { SlaStatus = SlaStatus.AtRisk });
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0001", result.Items.Single().Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_SlaStatusMet_ReturnsResolvedOnTimeTickets()
+    {
+        Seed(
+            new TicketSeed("TCK-0001", TicketPriority.Medium, TicketStatus.Resolved, null, "Contoso Ltd",
+                "Something is not working", FixedClock.DefaultNow, FixedClock.DefaultNow.AddHours(4),
+                FixedClock.DefaultNow.AddHours(2)),
+            new TicketSeed("TCK-0002", TicketPriority.Medium, TicketStatus.Resolved, null, "Contoso Ltd",
+                "Something is not working", FixedClock.DefaultNow, FixedClock.DefaultNow.AddHours(4),
+                FixedClock.DefaultNow.AddHours(6)));
+
+        var result = await Query(new TicketQuery { SlaStatus = SlaStatus.Met });
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0001", result.Items.Single().Reference);
+    }
+
     // ---------- Helpers ----------
 
     private async Task<PagedResult<TicketListItemDto>> Query(TicketQuery query)
     {
-        var sut = new TicketQueries(_db, new FixedClock());
+        var sut = new TicketQueries(_db, new FixedClock(), SlaWindowRules.Default);
         return await sut.GetPagedAsync(query.Normalized(), CancellationToken.None);
     }
 
     private void Seed(params TicketSeed[] seeds)
     {
-        // One shared category so FK is satisfied.
         var category = new Category("General", requiresSpecialist: false, forcesCriticalPriority: false);
         _db.Set<Category>().Add(category);
         _db.SaveChanges();
 
-        // One Customer per distinct name in the seeds.
         var customerNames = seeds.Select(s => s.CustomerName).Distinct().ToList();
         foreach (var name in customerNames)
         {
@@ -158,7 +230,6 @@ public sealed class TicketQueriesTests : IDisposable
                 FixedClock.DefaultNow));
         }
 
-        // One Agent per distinct assigned id.
         var agentIds = seeds.Where(s => s.AssignedAgentId is not null)
                             .Select(s => s.AssignedAgentId!.Value)
                             .Distinct()
@@ -178,7 +249,6 @@ public sealed class TicketQueriesTests : IDisposable
         {
             var customerId = _db.Set<Customer>().First(c => c.Name == seed.CustomerName).Id;
 
-            // NB: This `Ticket` is the domain class. The helper method is `SeedTicket`.
             var ticket = Ticket.Raise(
                 seed.Reference,
                 seed.Title,
@@ -186,22 +256,26 @@ public sealed class TicketQueriesTests : IDisposable
                 customerId,
                 category.Id,
                 seed.Priority,
-                FixedClock.DefaultNow);
+                seed.CreatedAtUtc);
 
             if (seed.AssignedAgentId is { } agentId)
             {
-                ticket.AssignTo(agentId, FixedClock.DefaultNow);
+                ticket.AssignTo(agentId, seed.CreatedAtUtc);
             }
 
             if (seed.Status != TicketStatus.New)
             {
-                ticket.ChangeStatus(seed.Status, FixedClock.DefaultNow);
+                ticket.ChangeStatus(seed.Status, seed.ResolvedAtUtc ?? FixedClock.DefaultNow);
             }
 
             _db.Set<Ticket>().Add(ticket);
-        }
+            _db.SaveChanges();
 
-        _db.SaveChanges();
+            // Set the fields no domain method exposes for test purposes.
+            _db.Entry(ticket).Property(t => t.DueAtUtc).CurrentValue = seed.DueAtUtc;
+            _db.Entry(ticket).Property(t => t.CreatedAtUtc).CurrentValue = seed.CreatedAtUtc;
+            _db.SaveChanges();
+        }
     }
 
     private static TicketSeed SeedTicket(
@@ -210,8 +284,9 @@ public sealed class TicketQueriesTests : IDisposable
         TicketStatus status = TicketStatus.New,
         int? assignedAgentId = null,
         string customerName = "Contoso Ltd",
-        string title = "Something is not working")
-        => new(reference, priority, status, assignedAgentId, customerName, title);
+        string title = "Something is not working") =>
+        new(reference, priority, status, assignedAgentId, customerName, title,
+            FixedClock.DefaultNow, FixedClock.DefaultNow.AddHours(24));
 
     private sealed record TicketSeed(
         string Reference,
@@ -219,5 +294,8 @@ public sealed class TicketQueriesTests : IDisposable
         TicketStatus Status,
         int? AssignedAgentId,
         string CustomerName,
-        string Title);
+        string Title,
+        DateTime CreatedAtUtc,
+        DateTime? DueAtUtc,
+        DateTime? ResolvedAtUtc = null);
 }
