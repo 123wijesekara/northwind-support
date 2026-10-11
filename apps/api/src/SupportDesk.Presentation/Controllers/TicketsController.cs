@@ -1,3 +1,5 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using SupportDesk.Application.Contracts.Common;
 using SupportDesk.Application.Contracts.Tickets;
@@ -59,7 +61,7 @@ public sealed class TicketsController : ControllerBase
         EscalateTicketRequest request,
         [FromServices] EscalateTicketCommandHandler handler,
         CancellationToken ct) =>
-        handler.HandleAsync(id, request, ct);
+        handler.HandleAsync(id, request, GetActor(), ct);
 
     [HttpGet("{id:int}/escalations")]
     public Task<IReadOnlyList<TicketEscalationDto>> Escalations(
@@ -67,4 +69,14 @@ public sealed class TicketsController : ControllerBase
         [FromServices] GetTicketEscalationsQueryHandler handler,
         CancellationToken ct) =>
         handler.HandleAsync(id, ct);
+
+    /// <summary>
+    /// The caller's identity, taken from the JWT. Prefers the email claim; falls back
+    /// to the name claim. Never read from the request body.
+    /// </summary>
+    private string GetActor() =>
+        User.FindFirstValue(JwtRegisteredClaimNames.Email)
+        ?? User.FindFirstValue(JwtRegisteredClaimNames.Name)
+        ?? User.FindFirstValue(ClaimTypes.Name)
+        ?? "unknown";
 }

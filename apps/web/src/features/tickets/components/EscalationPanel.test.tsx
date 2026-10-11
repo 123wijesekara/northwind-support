@@ -40,7 +40,6 @@ describe('EscalationPanel', () => {
     render(<EscalationPanel ticket={ticket()} onEscalated={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: 'bad' } });
-    fireEvent.change(screen.getByLabelText(/Your name/), { target: { value: 'alex' } });
 
     const button = screen.getByRole('button', { name: /Escalate/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
@@ -49,13 +48,28 @@ describe('EscalationPanel', () => {
     expect(escalate).not.toHaveBeenCalled();
   });
 
-  it('does not submit when the actor is empty', () => {
+  it('does not submit when the reason is empty', () => {
     render(<EscalationPanel ticket={ticket()} onEscalated={vi.fn()} />);
-
-    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: 'A valid reason here.' } });
 
     const button = screen.getByRole('button', { name: /Escalate/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+  });
+
+  it('submits when the reason is valid and sends only the reason', async () => {
+    escalate.mockResolvedValueOnce(ticket({ priority: 'High' }));
+
+    const onEscalated = vi.fn();
+    render(<EscalationPanel ticket={ticket()} onEscalated={onEscalated} />);
+
+    fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: 'A valid reason here.' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Escalate/ }));
+
+    await waitFor(() => {
+      expect(escalate).toHaveBeenCalledWith(1, { reason: 'A valid reason here.' });
+    });
+
+    expect(onEscalated).toHaveBeenCalled();
   });
 
   it('shows a 409 from the server without changing the ticket', async () => {
@@ -67,7 +81,6 @@ describe('EscalationPanel', () => {
     render(<EscalationPanel ticket={ticket()} onEscalated={onEscalated} />);
 
     fireEvent.change(screen.getByLabelText(/Reason/), { target: { value: 'A valid reason here.' } });
-    fireEvent.change(screen.getByLabelText(/Your name/), { target: { value: 'alex' } });
 
     fireEvent.click(screen.getByRole('button', { name: /Escalate/ }));
 

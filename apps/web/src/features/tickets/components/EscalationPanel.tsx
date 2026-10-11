@@ -5,7 +5,6 @@ import type { TicketDetail } from '../../../types/api';
 
 const MIN_REASON = 5;
 const MAX_REASON = 500;
-const MAX_ACTOR = 100;
 
 interface EscalationPanelProps {
   ticket: TicketDetail;
@@ -15,22 +14,17 @@ interface EscalationPanelProps {
 /** The form the agent uses to escalate a ticket. Client validation matches the server. */
 export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
   const [reason, setReason] = useState('');
-  const [actor, setActor] = useState('');
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reasonTrimmed = reason.trim();
-  const actorTrimmed = actor.trim();
 
   const reasonTooShort = reasonTrimmed.length > 0 && reasonTrimmed.length < MIN_REASON;
   const reasonTooLong = reasonTrimmed.length > MAX_REASON;
-  const actorTooLong = actorTrimmed.length > MAX_ACTOR;
 
   const canSubmit =
     reasonTrimmed.length >= MIN_REASON &&
     reasonTrimmed.length <= MAX_REASON &&
-    actorTrimmed.length > 0 &&
-    actorTrimmed.length <= MAX_ACTOR &&
     !isPending;
 
   const cannotEscalate = ticket.priority === 'Critical'
@@ -46,7 +40,6 @@ export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    // Client validation: never call the API with invalid input.
     if (!canSubmit) {
       return;
     }
@@ -57,7 +50,6 @@ export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
     try {
       const updated = await ticketsApi.escalateTicket(ticket.id, {
         reason: reasonTrimmed,
-        escalatedBy: actorTrimmed,
       });
       setReason('');
       onEscalated(updated);
@@ -106,25 +98,6 @@ export function EscalationPanel({ ticket, onEscalated }: EscalationPanelProps) {
             {reasonTooLong && (
               <span className="form-error" role="alert">
                 Reason must be at most {MAX_REASON} characters.
-              </span>
-            )}
-          </div>
-
-          <div className="field">
-            <label className="field__label" htmlFor="escalate-actor">
-              Your name
-            </label>
-            <input
-              id="escalate-actor"
-              type="text"
-              value={actor}
-              onChange={(event) => setActor(event.target.value)}
-              disabled={isPending}
-              aria-invalid={actorTooLong}
-            />
-            {actorTooLong && (
-              <span className="form-error" role="alert">
-                Name must be at most {MAX_ACTOR} characters.
               </span>
             )}
           </div>

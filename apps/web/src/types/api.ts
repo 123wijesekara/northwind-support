@@ -134,7 +134,6 @@ export interface CreateTicketPayload {
 
 export interface EscalateTicketPayload {
   reason: string;
-  escalatedBy: string;
 }
 
 export interface Agent {

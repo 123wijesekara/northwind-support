@@ -11,9 +11,8 @@ using SupportDesk.Domain.Repositories;
 namespace SupportDesk.Application.Features.Tickets.Commands.EscalateTicket;
 
 /// <summary>
-/// Escalates a ticket one priority step (BR-7). The due date is recomputed from now
-/// using the standard SLA window rules (including the Premium multiplier), and the owner
-/// is kept if still eligible, or replaced following BR-5.
+/// Escalates a ticket one priority step (BR-7). The actor (who did it) comes from the
+/// caller's identity, not the request body.
 /// </summary>
 public sealed class EscalateTicketCommandHandler(
     ITicketRepository tickets,
@@ -31,6 +30,7 @@ public sealed class EscalateTicketCommandHandler(
     public async Task<TicketDetailDto> HandleAsync(
         int ticketId,
         EscalateTicketRequest request,
+        string escalatedBy,
         CancellationToken ct)
     {
         var ticket = await tickets.GetByIdAsync(ticketId, ct)
@@ -57,14 +57,12 @@ public sealed class EscalateTicketCommandHandler(
         var newPriority = (TicketPriority)((int)ticket.Priority + 1);
         var now = clock.UtcNow;
 
-        // BR-7 + BR-2 + BR-3: recompute due date from now with standard rules.
         var newDueAtUtc = SlaCalculator.CalculateDueAt(
             newPriority,
             customer.Tier,
             createdAtUtc: now,
             rules: slaWindowRules);
 
-        // BR-7 + BR-5: keep the current owner if still eligible, otherwise pick a new one.
         var newAgentId = await ResolveOwnerAsync(ticket, category, ct);
 
         var history = ticket.Escalate(
@@ -72,7 +70,7 @@ public sealed class EscalateTicketCommandHandler(
             newAgentId: newAgentId,
             newDueAtUtc: newDueAtUtc,
             reason: request.Reason,
-            escalatedBy: request.EscalatedBy,
+            escalatedBy: escalatedBy,
             nowUtc: now);
 
         await escalations.AddAsync(history, ct);
@@ -80,7 +78,7 @@ public sealed class EscalateTicketCommandHandler(
 
         logger.LogInformation(
             "Ticket {Reference} escalated from {From} to {To} by {Who}.",
-            ticket.Reference, history.FromPriority, history.ToPriority, request.EscalatedBy);
+            ticket.Reference, history.FromPriority, history.ToPriority, escalatedBy);
 
         return await getTicket.HandleAsync(ticket.Id, ct);
     }

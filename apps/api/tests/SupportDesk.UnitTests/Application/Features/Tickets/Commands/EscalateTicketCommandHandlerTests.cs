@@ -27,7 +27,6 @@ public class EscalateTicketCommandHandlerTests
 
     public EscalateTicketCommandHandlerTests()
     {
-        // Baseline defaults — tests may override any of these before acting.
         _customers.Setup(c => c.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Customer("Contoso", "c@example.com", null, CustomerTier.Standard, _clock.UtcNow));
 
@@ -91,9 +90,9 @@ public class EscalateTicketCommandHandlerTests
     public async Task Escalate_RaisesPriorityOneStep()
     {
         var ticket = ExistingTicket(TicketPriority.Medium);
-        var request = new EscalateTicketRequest("Urgent for the customer.", "alex");
+        var request = new EscalateTicketRequest("Urgent for the customer.");
 
-        await Sut().HandleAsync(1, request, CancellationToken.None);
+        await Sut().HandleAsync(1, request, "alex", CancellationToken.None);
 
         Assert.Equal(TicketPriority.High, ticket.Priority);
     }
@@ -105,10 +104,9 @@ public class EscalateTicketCommandHandlerTests
 
         _clock.Advance(TimeSpan.FromHours(1));
 
-        var request = new EscalateTicketRequest("Escalating due to impact.", "alex");
-        await Sut().HandleAsync(1, request, CancellationToken.None);
+        var request = new EscalateTicketRequest("Escalating due to impact.");
+        await Sut().HandleAsync(1, request, "alex", CancellationToken.None);
 
-        // High priority = 8h window (Standard tier). Due should be from the advanced "now".
         Assert.Equal(_clock.UtcNow.AddHours(8), ticket.DueAtUtc);
     }
 
@@ -116,10 +114,10 @@ public class EscalateTicketCommandHandlerTests
     public async Task Escalate_CriticalTicket_Throws409()
     {
         ExistingTicket(TicketPriority.Critical);
-        var request = new EscalateTicketRequest("Escalate anyway please.", "alex");
+        var request = new EscalateTicketRequest("Escalate anyway please.");
 
         var ex = await Assert.ThrowsAsync<ConflictException>(
-            () => Sut().HandleAsync(1, request, CancellationToken.None));
+            () => Sut().HandleAsync(1, request, "alex", CancellationToken.None));
 
         Assert.Contains("Critical", ex.Message);
     }
@@ -128,10 +126,10 @@ public class EscalateTicketCommandHandlerTests
     public async Task Escalate_ResolvedTicket_Throws409()
     {
         ExistingTicket(TicketPriority.Medium, TicketStatus.Resolved);
-        var request = new EscalateTicketRequest("Escalate anyway please.", "alex");
+        var request = new EscalateTicketRequest("Escalate anyway please.");
 
         var ex = await Assert.ThrowsAsync<ConflictException>(
-            () => Sut().HandleAsync(1, request, CancellationToken.None));
+            () => Sut().HandleAsync(1, request, "alex", CancellationToken.None));
 
         Assert.Contains("Resolved", ex.Message);
     }
@@ -140,22 +138,22 @@ public class EscalateTicketCommandHandlerTests
     public async Task Escalate_ClosedTicket_Throws409()
     {
         ExistingTicket(TicketPriority.Medium, TicketStatus.Closed);
-        var request = new EscalateTicketRequest("Escalate anyway please.", "alex");
+        var request = new EscalateTicketRequest("Escalate anyway please.");
 
         var ex = await Assert.ThrowsAsync<ConflictException>(
-            () => Sut().HandleAsync(1, request, CancellationToken.None));
+            () => Sut().HandleAsync(1, request, "alex", CancellationToken.None));
 
         Assert.Contains("Closed", ex.Message);
     }
 
     [Fact]
-    public async Task Escalate_WritesHistoryRow()
+    public async Task Escalate_WritesHistoryRow_WithActorFromCaller()
     {
         var ticket = ExistingTicket(TicketPriority.Medium);
         ticket.AssignTo(99, _clock.UtcNow);
 
-        var request = new EscalateTicketRequest("Escalating due to impact.", "alex");
-        await Sut().HandleAsync(1, request, CancellationToken.None);
+        var request = new EscalateTicketRequest("Escalating due to impact.");
+        await Sut().HandleAsync(1, request, "alex@example.com", CancellationToken.None);
 
         _escalations.Verify(
             e => e.AddAsync(
@@ -163,7 +161,7 @@ public class EscalateTicketCommandHandlerTests
                     h.FromPriority == TicketPriority.Medium &&
                     h.ToPriority == TicketPriority.High &&
                     h.Reason == "Escalating due to impact." &&
-                    h.EscalatedBy == "alex"),
+                    h.EscalatedBy == "alex@example.com"),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -171,7 +169,6 @@ public class EscalateTicketCommandHandlerTests
     [Fact]
     public async Task Escalate_KeepsCurrentAgent_WhenStillEligible()
     {
-        // The agent is at 3 of 10 — still eligible.
         _selectionQuery.Setup(q => q.GetCandidatesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[]
             {
@@ -181,8 +178,8 @@ public class EscalateTicketCommandHandlerTests
         var ticket = ExistingTicket(TicketPriority.Medium);
         ticket.AssignTo(5, _clock.UtcNow);
 
-        var request = new EscalateTicketRequest("Keeping the current owner.", "alex");
-        await Sut().HandleAsync(1, request, CancellationToken.None);
+        var request = new EscalateTicketRequest("Keeping the current owner.");
+        await Sut().HandleAsync(1, request, "alex", CancellationToken.None);
 
         Assert.Equal(5, ticket.AssignedAgentId);
     }
@@ -190,7 +187,6 @@ public class EscalateTicketCommandHandlerTests
     [Fact]
     public async Task Escalate_Reassigns_WhenCurrentAgentAtLimit()
     {
-        // Agent 5 is at 10 of 10 (at limit). Agent 7 has capacity.
         _selectionQuery.Setup(q => q.GetCandidatesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new[]
             {
@@ -201,8 +197,8 @@ public class EscalateTicketCommandHandlerTests
         var ticket = ExistingTicket(TicketPriority.Medium);
         ticket.AssignTo(5, _clock.UtcNow);
 
-        var request = new EscalateTicketRequest("Reassigning to someone free.", "alex");
-        await Sut().HandleAsync(1, request, CancellationToken.None);
+        var request = new EscalateTicketRequest("Reassigning to someone free.");
+        await Sut().HandleAsync(1, request, "alex", CancellationToken.None);
 
         Assert.Equal(7, ticket.AssignedAgentId);
     }
@@ -213,9 +209,9 @@ public class EscalateTicketCommandHandlerTests
         _tickets.Setup(t => t.GetByIdAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Ticket?)null);
 
-        var request = new EscalateTicketRequest("Does not matter here.", "alex");
+        var request = new EscalateTicketRequest("Does not matter here.");
 
         await Assert.ThrowsAsync<NotFoundException>(
-            () => Sut().HandleAsync(999, request, CancellationToken.None));
+            () => Sut().HandleAsync(999, request, "alex", CancellationToken.None));
     }
 }
