@@ -93,6 +93,62 @@ public sealed class Ticket : AggregateRoot
         DueAtUtc = dueAtUtc;
         UpdatedAtUtc = nowUtc;
     }
+
+
+    /// <summary>
+    /// Escalates the ticket one priority step, recomputes the due date from <paramref name="nowUtc"/>,
+    /// and moves the ticket to <paramref name="newAgentId"/> (or unassigned when null).
+    /// Returns the immutable history row.
+    /// </summary>
+    /// <exception cref="BusinessRuleViolationException">
+    /// The ticket is Critical, Resolved or Closed; or the new priority is not exactly one step higher.
+    /// </exception>
+    public TicketEscalation Escalate(
+        TicketPriority newPriority,
+        int? newAgentId,
+        DateTime newDueAtUtc,
+        string reason,
+        string escalatedBy,
+        DateTime nowUtc)
+    {
+        if (Status is TicketStatus.Resolved or TicketStatus.Closed)
+        {
+            throw new BusinessRuleViolationException(
+                $"Ticket {Reference} is {Status} and cannot be escalated.");
+        }
+
+        if (Priority == TicketPriority.Critical)
+        {
+            throw new BusinessRuleViolationException(
+                $"Ticket {Reference} is already Critical and cannot be escalated.");
+        }
+
+        var expected = (TicketPriority)((int)Priority + 1);
+        if (newPriority != expected)
+        {
+            throw new BusinessRuleViolationException(
+                $"Escalation must raise priority exactly one step (from {Priority} to {expected}).");
+        }
+
+        var history = TicketEscalation.Record(
+            ticketId: Id,
+            fromPriority: Priority,
+            toPriority: newPriority,
+            fromAgentId: AssignedAgentId,
+            toAgentId: newAgentId,
+            fromDueAtUtc: DueAtUtc,
+            toDueAtUtc: newDueAtUtc,
+            reason: reason,
+            escalatedBy: escalatedBy,
+            escalatedAtUtc: nowUtc);
+
+        Priority = newPriority;
+        AssignedAgentId = newAgentId;
+        DueAtUtc = newDueAtUtc;
+        UpdatedAtUtc = nowUtc;
+
+        return history;
+    }
     
     /// <summary>
     /// Moves the ticket through its lifecycle, keeping the resolution timestamp in step.
