@@ -1,10 +1,20 @@
 import type { ProblemDetails } from '../types/api';
 
-/**
- * Where the API lives. In development this stays '/api' and the Vite dev server proxies it
- * to the backend; set VITE_API_BASE_URL to point a build somewhere else. See .env.example.
- */
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api';
+
+const TOKEN_KEY = 'supportdesk.token';
+
+export function getToken(): string | null {
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string): void {
+  sessionStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearToken(): void {
+  sessionStorage.removeItem(TOKEN_KEY);
+}
 
 /** A failed HTTP call, carrying the problem document the API returned. */
 export class ApiError extends Error {
@@ -19,24 +29,32 @@ export class ApiError extends Error {
     this.problem = problem;
   }
 
-  /** Field name to messages, when the failure was a validation failure. */
   get fieldErrors(): Record<string, string[]> {
     return this.problem?.errors ?? {};
   }
 }
 
 /**
- * The single place that talks to the API. Returns parsed JSON, or throws an
- * {@link ApiError} that callers can show to the user.
+ * The single place that talks to the API. Attaches the bearer token when present.
+ * On a 401 it clears the stored session so the app can send the user back to login.
  */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
+
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
+
+  if (response.status === 401) {
+    clearToken();
+    // Let the app react — a top-level listener can redirect to login.
+    window.dispatchEvent(new Event('supportdesk:unauthorized'));
+  }
 
   if (!response.ok) {
     const problem = await readProblem(response);
@@ -55,7 +73,6 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-/** Turns anything thrown by a fetch into a message worth showing a user. */
 export function toErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) {
     return error.message;
@@ -72,7 +89,6 @@ async function readProblem(response: Response): Promise<ProblemDetails | undefin
   try {
     return (await response.json()) as ProblemDetails;
   } catch {
-    // Not every failure has a JSON body - a dead server certainly will not.
     return undefined;
   }
 }
